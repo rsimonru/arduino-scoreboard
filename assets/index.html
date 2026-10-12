@@ -1,0 +1,74 @@
+<!--
+SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+
+SPDX-License-Identifier: MPL-2.0
+-->
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Marcador TV</title>
+    <script src="/libs/socket.io.min.js"></script>
+    <link rel="stylesheet" href="tailwind.css">
+</head>
+<body class="m-0 flex h-screen flex-col items-center justify-center bg-[#111] font-[Arial,sans-serif] text-white">
+    <div id="sportName" class="leading-[normal]">Cargando...</div>
+    <div class="mb-5 box-border flex w-full items-center justify-between px-10">
+        <div class="flex h-56 w-[20vw] items-center justify-start"><img id="localLogoImg" alt="" hidden class="max-h-full max-w-full object-contain"></div>
+        <div class="font-[monospace] text-[12rem] leading-[normal] font-bold text-[#ffeb3b]" id="timeDisplay">00:00</div>
+        <div class="flex h-56 w-[20vw] items-center justify-end"><img id="visitorLogoImg" alt="" hidden class="max-h-full max-w-full object-contain"></div>
+    </div>
+
+    <div class="flex w-full justify-center">
+        <div class="mx-20 text-center">
+            <div class="text-[4rem] leading-[normal] text-[#aaa]" id="localNameDisp">LOCAL</div>
+            <div class="m-0 text-[15rem] leading-[normal] font-bold text-[#4CAF50]" id="localPoints">0</div>
+        </div>
+
+        <div class="mx-20 text-center">
+            <div class="text-[4rem] leading-[normal] text-[#aaa]" id="visitorNameDisp">VISITANTE</div>
+            <div class="m-0 text-[15rem] leading-[normal] font-bold text-[#2196F3]" id="visitorPoints">0</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        // Función para convertir segundos a MM:SS
+        function formatDisplayTime(totalSeconds) {
+          totalSeconds = totalSeconds.seconds !== undefined ? totalSeconds.seconds : totalSeconds;
+          const minutes = Math.floor(totalSeconds / 60);
+          const seconds = totalSeconds % 60;
+          // padStart add a '0' to the left, if number is lower than 10
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        // En cuanto el websocket se conecta realmente, pedimos los datos iniciales
+        socket.on('connect', () => {
+            socket.emit('requestInit', null);
+        });
+
+        socket.on('updateScoreboard', (match_state) => {
+          document.getElementById('sportName').innerText = match_state.sport_name;
+          document.getElementById('localPoints').innerText = match_state.localPoints;
+          document.getElementById('visitorPoints').innerText = match_state.visitorPoints;
+          // NUEVO: Actualizamos los nombres de los equipos
+          document.getElementById('localNameDisp').innerText = match_state.localName;
+          document.getElementById('visitorNameDisp').innerText = match_state.visitorName;
+          setLogo('localLogoImg', match_state.localLogo);
+          setLogo('visitorLogoImg', match_state.visitorLogo);
+        });
+
+        function setLogo(id, url) {
+          const img = document.getElementById(id);
+          if (url) { img.src = url; img.hidden = false; }
+          else { img.removeAttribute('src'); img.hidden = true; }
+        }
+
+        socket.on('updateTime', (seconds) => {
+          document.getElementById('timeDisplay').innerText = formatDisplayTime(seconds);
+        });
+    </script>
+</body>
+</html>

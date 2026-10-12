@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Marcador</title>
+    <script src="/libs/socket.io.min.js"></script>
+    <link rel="stylesheet" href="tailwind.css">
+</head>
+<body class="bg-slate-100 p-5 font-sans text-center text-slate-900">
+    <main class="mx-auto max-w-4xl">
+      <button id="btnToggleSettings" type="button" aria-expanded="false" aria-controls="settingsPanel" class="mb-5 cursor-pointer rounded-lg bg-slate-700 px-5 py-3 text-xl text-white transition-opacity active:opacity-80">⚙ Mostrar configuración</button>
+      <div id="settingsPanel" class="hidden">
+        <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+            <h2 class="mb-4 text-2xl font-bold">Configuración Deportiva</h2>
+            <select id="configSelector" class="mb-4 w-full rounded-md border border-slate-300 p-2.5 text-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" onchange="changeSport()">
+                <option value="">Cargando configuraciones...</option>
+            </select>
+        </div>
+        <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+            <h2 class="mb-4 text-2xl font-bold">Nombres de los Equipos</h2>
+            <div class="mb-4 flex flex-col items-center justify-center gap-2.5 md:flex-row">
+                <input type="text" id="inputLocalName" placeholder="Local" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
+                <span class="text-2xl">VS</span>
+                <input type="text" id="inputVisitorName" placeholder="Visitante" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
+            </div>
+            <div class="mb-4 flex flex-col gap-4 md:flex-row">
+                <div class="flex w-full min-w-0 flex-col items-center gap-2 rounded-xl border border-slate-300 p-3 md:flex-1">
+                    <span class="text-lg font-bold">Escudo local</span>
+                    <img id="previewLocalLogo" alt="Escudo local" class="hidden h-20 w-20 object-contain">
+                    <input type="file" id="fileLocalLogo" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base" onchange="uploadLogo('local', this)">
+                    <button id="btnDeleteLocalLogo" type="button" class="hidden cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-base text-white transition-opacity active:opacity-80" onclick="deleteLogo('local')">Eliminar escudo</button>
+                </div>
+                <div class="flex w-full min-w-0 flex-col items-center gap-2 rounded-xl border border-slate-300 p-3 md:flex-1">
+                    <span class="text-lg font-bold">Escudo visitante</span>
+                    <img id="previewVisitorLogo" alt="Escudo visitante" class="hidden h-20 w-20 object-contain">
+                    <input type="file" id="fileVisitorLogo" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base" onchange="uploadLogo('visitor', this)">
+                    <button id="btnDeleteVisitorLogo" type="button" class="hidden cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-base text-white transition-opacity active:opacity-80" onclick="deleteLogo('visitor')">Eliminar escudo</button>
+                </div>
+            </div>
+            <button onclick="applyTeamNames()" class="cursor-pointer rounded-lg bg-green-600 p-2.5 text-2xl text-white transition-opacity active:opacity-80">Actualizar Nombres</button>
+        </div>
+    
+        <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+            <h2 class="text-2xl font-bold">Ajuste manual de tiempo</h2>
+            <div class="flex justify-center gap-2.5">
+                <input type="number" id="editMin" min="0" max="999" placeholder="Min" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
+                <span class="my-2 font-mono text-2xl font-bold">:</span>
+                <input type="number" id="editSec" min="0" max="59" placeholder="Seg" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
+                <button class="cursor-pointer rounded-lg bg-green-600 p-2.5 text-2xl text-white transition-opacity active:opacity-80" onclick="applyManualTime()">Aplicar</button>
+            </div>
+        </div>
+      </div>
+      
+      <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+          <h2 class="text-2xl font-bold">Reloj del Partido</h2>
+          <div id="tableWatch" class="my-2 font-mono text-6xl font-bold">00:00</div>
+          <div class="flex justify-center gap-2.5">
+              <button id="btnToggleTime" class="cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('timeToggle', null)">▶ Iniciar Reloj</button>
+          </div>
+      </div>
+  
+      <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+          <h2 class="text-2xl font-bold" id="lblLocalName">Puntuación LOCAL</h2>
+          <div class="mt-5 flex justify-around gap-2.5" id="botonesLocal">
+              <!-- Se rellenan dinámicamente con JavaScript -->
+          </div>
+  
+          <h2 class="mt-8 text-2xl font-bold" id="lblVisitorName">Puntuación VISITANTE</h2>
+          <div class="mt-5 flex justify-around gap-2.5" id="botonesVisitante">
+              <!-- Se rellenan dinámicamente con JavaScript -->
+          </div>
+      </div>
+  
+      <button class="max-w-2xl cursor-pointer rounded-lg bg-red-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="totalReset()">Reiniciar todo</button>
+    </main>
+
+    <script>
+        const socket = io();
+
+        document.getElementById('btnToggleSettings').addEventListener('click', (e) => {
+            const panel = document.getElementById('settingsPanel');
+            const hidden = panel.classList.toggle('hidden');
+            e.currentTarget.setAttribute('aria-expanded', String(!hidden));
+            e.currentTarget.textContent = hidden ? '⚙ Mostrar configuración' : '✕ Ocultar configuración';
+        });
+        let currentSportName = "";
+
+        function formatDisplayTime(totalSeconds) {
+            totalSeconds = totalSeconds.seconds !== undefined ? totalSeconds.seconds : totalSeconds;
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        // Emitir evento genérico de puntos
+        function addPoints(team, points) {
+            socket.emit('addPoints', { team: team, points: points });
+        }
+
+        // Notificar al backend que queremos cambiar de deporte
+        function changeSport() {
+            const selector = document.getElementById('configSelector');
+            if(confirm("¿Cambiar de deporte? Esto reiniciará el marcador y el tiempo actual.")) {
+                socket.emit('loadConfig', { id: selector.value });
+            }
+        }
+
+        // En cuanto el websocket se conecta realmente, pedimos los datos iniciales
+        socket.on('connect', () => {
+            socket.emit('requestInit', null);
+        });
+      
+        // Recibir lista de configuraciones desde SQLite
+        socket.on('configsList', (configs) => {
+            const selector = document.getElementById('configSelector');
+            selector.innerHTML = ''; // Limpiar opciones previas
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.text = `${config.name} (${config.default_minutes} min - ${config.timer_mode === 'down' ? 'Cuenta atrás' : 'Normal'})`;
+                selector.appendChild(option);
+            });
+        });
+      
+        // Actualizar el estado (y adaptar los botones)
+        socket.on('updateScoreboard', (match_state) => {
+            currentSportName = match_state.sport_name;
+          
+            document.getElementById('lblLocalName').innerText = `Puntuación ${match_state.localName}`;
+            document.getElementById('lblVisitorName').innerText = `Puntuación ${match_state.visitorName}`;
+            
+            document.getElementById('inputLocalName').value = match_state.localName === 'LOCAL' ? '' : match_state.localName;
+            document.getElementById('inputVisitorName').value = match_state.visitorName === 'VISITANTE' ? '' : match_state.visitorName;
+
+            showLogo('Local', match_state.localLogo);
+            showLogo('Visitor', match_state.visitorLogo);
+          
+            const btnToggle = document.getElementById('btnToggleTime');
+            if (match_state.is_running) {
+                // Si el reloj está corriendo, el botón se pone naranja y dice Pausar
+                btnToggle.className = 'cursor-pointer rounded-lg bg-amber-500 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80';
+                btnToggle.innerText = '⏸ Pausar Reloj';
+            } else {
+                // Si está parado, el botón se pone verde y dice Iniciar
+                btnToggle.className = 'cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80';
+                btnToggle.innerText = '▶ Iniciar Reloj';
+            }
+            
+            // Adaptar interfaz si es Baloncesto u otro deporte
+            const localDiv = document.getElementById('botonesLocal');
+            const visitorDiv = document.getElementById('botonesVisitante');
+
+            // Forzamos que los botones se apilen en vertical para colocar el de restar debajo
+            localDiv.style.flexDirection = 'column';
+            visitorDiv.style.flexDirection = 'column';
+
+            if(currentSportName.toLowerCase().includes('baloncesto')) {
+                localDiv.innerHTML = `
+                    <div class="flex w-full gap-2.5">
+                        <button class="flex-1 cursor-pointer rounded-lg bg-green-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('local', 1)">+1</button>
+                        <button class="flex-1 cursor-pointer rounded-lg bg-green-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('local', 2)">+2</button>
+                        <button class="flex-1 cursor-pointer rounded-lg bg-green-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('local', 3)">+3</button>
+                    </div>
+                    <button class="mt-2.5 w-full cursor-pointer rounded-lg bg-slate-500 md:w-1/3 md:self-center p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('local', -1)">-1 Punto (Corregir)</button>
+                `;
+                visitorDiv.innerHTML = `
+                    <div class="flex w-full gap-2.5">
+                        <button class="flex-1 cursor-pointer rounded-lg bg-blue-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', 1)">+1</button>
+                        <button class="flex-1 cursor-pointer rounded-lg bg-blue-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', 2)">+2</button>
+                        <button class="flex-1 cursor-pointer rounded-lg bg-blue-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', 3)">+3</button>
+                    </div>
+                    <button class="mt-2.5 w-full cursor-pointer rounded-lg bg-slate-500 md:w-1/3 md:self-center p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', -1)">-1 Punto (Corregir)</button>
+                `;
+            } else { // Interfaz por defecto para fútbol / fútbol sala
+                localDiv.innerHTML = `
+                  <button class="w-full md:w-1/3 md:self-center cursor-pointer rounded-lg bg-green-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('local', 1)">+ GOL LOCAL</button>
+                  <button class="mt-2.5 w-full cursor-pointer rounded-lg bg-slate-500 md:w-1/3 md:self-center p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('local', -1)">-1 GOL (Corregir)</button>
+                `;
+                visitorDiv.innerHTML = `
+                  <button class="w-full md:w-1/3 md:self-center cursor-pointer rounded-lg bg-blue-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', 1)">+ GOL VISITANTE</button>
+                  <button class="mt-2.5 w-full cursor-pointer rounded-lg bg-slate-500 md:w-1/3 md:self-center p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', -1)">-1 GOL (Corregir)</button>
+                `;
+            }
+
+            // Seleccionar en el dropdown el deporte actual si nos acabamos de conectar
+            const selector = document.getElementById('configSelector');
+            for(let i = 0; i < selector.options.length; i++) {
+                if(selector.options[i].text.includes(currentSportName)) {
+                    selector.selectedIndex = i;
+                    break;
+                }
+            }
+        });
+
+        socket.on('updateTime', (seconds) => {
+            document.getElementById('tableWatch').innerText = formatDisplayTime(seconds);
+        });
+
+        function totalReset() {
+            if(confirm("¿Seguro que quieres reiniciar TODO a 0?")) {
+                socket.emit('totalReset', null);
+            }
+        }
+      
+        // Función para aplicar el tiempo manual
+        function applyManualTime() {
+            // Leer los valores de los inputs (si están vacíos, usamos 0)
+            const min = parseInt(document.getElementById('editMin').value) || 0;
+            const sec = parseInt(document.getElementById('editSec').value) || 0;
+            
+            // Calcular los segundos totales
+            const totalSeconds = (min * 60) + sec;
+            
+            // Confirmar la acción para evitar errores en directo
+            const textTime = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+            if (confirm(`¿Estás seguro de ajustar el reloj a ${textTime}?`)) {
+                socket.emit('setTime', { seconds: totalSeconds });
+                
+                // Vaciar los campos después de aplicarlo
+                document.getElementById('editMin').value = '';
+                document.getElementById('editSec').value = '';
+            }
+        }
+      
+        function showLogo(suffix, url) {
+            const img = document.getElementById(`preview${suffix}Logo`);
+            const btn = document.getElementById(`btnDelete${suffix}Logo`);
+            if (url) {
+                img.src = url;
+            } else {
+                img.removeAttribute('src');
+                document.getElementById(`file${suffix}Logo`).value = '';
+            }
+            img.classList.toggle('hidden', !url);
+            btn.classList.toggle('hidden', !url);
+        }
+
+        async function uploadLogo(team, input) {
+            if (!input.files.length) return;
+            const body = new FormData();
+            body.append('team', team);
+            body.append('file', input.files[0]);
+            try {
+                const res = await fetch('/upload_logo', { method: 'POST', body });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || 'No se pudo subir el escudo');
+                    input.value = '';
+                }
+            } catch (e) {
+                alert('No se pudo subir el escudo');
+                input.value = '';
+            }
+        }
+
+        async function deleteLogo(team) {
+            await fetch(`/delete_logo?team=${team}`, { method: 'POST' });
+        }
+
+        // Función para aplicar nombres de equipos
+        function applyTeamNames() {
+            const local = document.getElementById('inputLocalName').value.trim();
+            const visitor = document.getElementById('inputVisitorName').value.trim();
+            
+            socket.emit('setTeamNames', { 
+                localName: local, 
+                visitorName: visitor 
+            });
+        }
+    </script>
+</body>
+</html>

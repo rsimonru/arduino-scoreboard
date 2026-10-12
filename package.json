@@ -1,0 +1,17 @@
+{
+  "name": "scoreboard",
+  "version": "1.0.0",
+  "description": "The **Button Action** example demonstrates how to receive and handle button clicks from the Web UI using both WebSocket and HTTP POST requests.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

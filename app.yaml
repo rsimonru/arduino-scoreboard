@@ -1,0 +1,6 @@
+name: Scoreboard
+description: A simple example that demonstrates how to handle button actions in the Web UI.
+ports: []
+bricks:
+- arduino:web_ui: {}
+icon: 💡

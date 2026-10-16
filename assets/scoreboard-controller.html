@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Marcador</title>
     <script src="/libs/socket.io.min.js"></script>
+    <script src="/libs/NoSleep.min.js"></script>
     <link rel="stylesheet" href="tailwind.css">
 </head>
 <body class="bg-slate-100 p-5 font-sans text-center text-slate-900">
@@ -268,6 +269,14 @@
                 visitorName: visitor 
             });
         }
+
+        // Pantalla siempre activa
+        var noSleep = new NoSleep();
+        document.addEventListener('click', function enableNoSleep() {
+            console.log('Enabling NoSleep');
+            document.removeEventListener('click', enableNoSleep, false);
+            noSleep.enable();
+        }, false);
     </script>
 </body>
 </html>

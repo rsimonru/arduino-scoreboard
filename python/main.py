@@ -10,6 +10,7 @@ from arduino.app_utils import *
 from arduino.app_utils import Logger
 from arduino.app_bricks.web_ui import WebUI
 import time
+import threading
 import sqlite3
 import os
 from fastapi import File, Form, UploadFile
@@ -126,6 +127,7 @@ def save_team_names(local_name, visitor_name):
 init_db()
 
 # ----------------- ESTADO DEL PARTIDO -----------------
+score_lock = threading.Lock()
 match_state = {
     'sport_name': 'Fútbol Sala',
     'timer_mode': 'down',
@@ -135,6 +137,8 @@ match_state = {
     'visitorLogo': '',
     'localPoints': 0,
     'visitorPoints': 0,
+    'localFouls': 0,
+    'visitorFouls': 0,
     'seconds': 20 * 60,
     'is_running': False
 }
@@ -151,6 +155,7 @@ def cronometro():
                 else:
                     match_state['is_running'] = False # El reloj se para al llegar a 0
                     ui.send_message('updateScoreboard', match_state)
+                    buzzer('main', {'duration': 3000})
                     
             ui.send_message('updateTime', {"seconds": match_state['seconds']})
         time.sleep(1)
@@ -181,6 +186,8 @@ def load_config(client, data):
         match_state['seconds'] = selected['default_minutes'] * 60 if selected['timer_mode'] == 'down' else 0
         match_state['localPoints'] = 0
         match_state['visitorPoints'] = 0
+        match_state['localFouls'] = 0
+        match_state['visitorFouls'] = 0
         
         ui.send_message('updateScoreboard', match_state)
         ui.send_message('updateTime', {"seconds": match_state['seconds']})
@@ -188,17 +195,17 @@ def load_config(client, data):
 def addPoints(client, data):
     team = str(data['team'])
     points = int(data['points'])
-    if team == 'local':
-        match_state['localPoints'] += points
+    key = 'localPoints' if team == 'local' else 'visitorPoints'
+    with score_lock:
         # Evitar puntuaciones negativas
-        if match_state['localPoints'] < 0:
-            match_state['localPoints'] = 0
-    else:
-        match_state['visitorPoints'] += points
-        # Evitar puntuaciones negativas
-        if match_state['visitorPoints'] < 0:
-            match_state['visitorPoints'] = 0
+        match_state[key] = max(0, match_state[key] + points)
             
+    ui.send_message('updateScoreboard', match_state)
+
+def addFouls(client, data):
+    key = 'localFouls' if str(data['team']) == 'local' else 'visitorFouls'
+    with score_lock:
+        match_state[key] = max(0, match_state[key] + int(data['fouls']))
     ui.send_message('updateScoreboard', match_state)
 
 def timeToggle(client, data):
@@ -207,9 +214,19 @@ def timeToggle(client, data):
     # Enviamos el nuevo estado a todos los dispositivos conectados
     ui.send_message('updateScoreboard', match_state)
 
+def buzzer(client, data):
+    duration = 1000
+    try:
+        duration = max(100, min(int((data or {}).get('duration', 1000)), 5000))
+    except (TypeError, ValueError):
+        pass
+    Bridge.notify("buzzer", duration)
+
 def totalReset(client, data):
     match_state['localPoints'] = 0
     match_state['visitorPoints'] = 0
+    match_state['localFouls'] = 0
+    match_state['visitorFouls'] = 0
     match_state['is_running'] = False
     
     # Reiniciar el reloj según la configuración actual
@@ -245,7 +262,9 @@ ui.on_message("connect", on_connect)
 ui.on_message("requestInit", on_connect)
 ui.on_message("loadConfig", load_config)
 ui.on_message("addPoints", addPoints)
+ui.on_message("addFouls", addFouls)
 ui.on_message("timeToggle", timeToggle)
+ui.on_message("buzzer", buzzer)
 ui.on_message("totalReset", totalReset)
 ui.on_message("setTime", setTime)
 ui.on_message("setTeamNames", setTeamNames)

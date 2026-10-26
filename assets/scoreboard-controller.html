@@ -8,7 +8,7 @@
     <script src="/libs/NoSleep.min.js"></script>
     <link rel="stylesheet" href="tailwind.css">
 </head>
-<body class="bg-slate-100 p-5 font-sans text-center text-slate-900">
+<body class="touch-manipulation bg-slate-100 p-5 font-sans text-center text-slate-900">
     <main class="mx-auto max-w-4xl">
       <button id="btnToggleSettings" type="button" aria-expanded="false" aria-controls="settingsPanel" class="mb-5 cursor-pointer rounded-lg bg-slate-700 px-5 py-3 text-xl text-white transition-opacity active:opacity-80">⚙ Mostrar configuración</button>
       <div id="settingsPanel" class="hidden">
@@ -58,6 +58,8 @@
           <div id="tableWatch" class="my-2 font-mono text-6xl font-bold">00:00</div>
           <div class="flex justify-center gap-2.5">
               <button id="btnToggleTime" class="cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('timeToggle', null)">▶ Iniciar Reloj</button>
+              <button class="max-w-2xl cursor-pointer rounded-lg bg-amber-500 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('buzzer', { duration: 2000 })">🔔 Sonar</button>
+      
           </div>
       </div>
   
@@ -95,8 +97,37 @@
         }
 
         // Emitir evento genérico de puntos
+        // Ignora pulsaciones repetidas del mismo botón en un intervalo muy corto
+        const lastPress = {};
+        function debounced(key, fn) {
+            const now = Date.now();
+            if (now - (lastPress[key] || 0) < 250) return;
+            lastPress[key] = now;
+            fn();
+        }
+
         function addPoints(team, points) {
-            socket.emit('addPoints', { team: team, points: points });
+            debounced(`p${team}${points}`, () => socket.emit('addPoints', { team: team, points: points }));
+        }
+
+        function addFouls(team, fouls) {
+            debounced(`f${team}${fouls}`, () => socket.emit('addFouls', { team: team, fouls: fouls }));
+        }
+
+        // Fútbol sala: goles (2/3) y faltas (1/3) en la misma fila
+        function futsalHtml(team, state, goalLabel, goalColor) {
+            const count = team === 'local' ? state.localFouls : state.visitorFouls;
+            return `
+                <div class="flex w-full gap-2.5">
+                    <div class="flex w-2/3 flex-col gap-2.5">
+                        <button class="w-full cursor-pointer rounded-lg ${goalColor} h-20 px-2.5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('${team}', 1)">+ ${goalLabel}</button>
+                        <button class="w-full cursor-pointer rounded-lg bg-slate-500 p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('${team}', -1)">-1 GOL</button>
+                    </div>
+                    <div class="flex w-1/3 flex-col gap-2.5">
+                        <button class="w-full cursor-pointer rounded-lg bg-amber-500 h-20 px-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addFouls('${team}', 1)">+ FALTA</button>
+                        <button class="w-full cursor-pointer rounded-lg bg-slate-500 p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addFouls('${team}', -1)">-1 FALTA</button>
+                    </div>
+                </div>`;
         }
 
         // Notificar al backend que queremos cambiar de deporte
@@ -128,8 +159,11 @@
         socket.on('updateScoreboard', (match_state) => {
             currentSportName = match_state.sport_name;
           
-            document.getElementById('lblLocalName').innerText = `Puntuación ${match_state.localName}`;
-            document.getElementById('lblVisitorName').innerText = `Puntuación ${match_state.visitorName}`;
+            const isFutsal = currentSportName.toLowerCase().includes('fútbol sala');
+            const scoreText = (name, points, fouls) =>
+                `Puntuación ${name} · G: ${points}` + (isFutsal ? ` · F: ${fouls || 0}` : '');
+            document.getElementById('lblLocalName').innerText = scoreText(match_state.localName, match_state.localPoints, match_state.localFouls);
+            document.getElementById('lblVisitorName').innerText = scoreText(match_state.visitorName, match_state.visitorPoints, match_state.visitorFouls);
             
             document.getElementById('inputLocalName').value = match_state.localName === 'LOCAL' ? '' : match_state.localName;
             document.getElementById('inputVisitorName').value = match_state.visitorName === 'VISITANTE' ? '' : match_state.visitorName;
@@ -182,6 +216,11 @@
                   <button class="w-full md:w-1/3 md:self-center cursor-pointer rounded-lg bg-blue-600 p-5 text-3xl text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', 1)">+ GOL VISITANTE</button>
                   <button class="mt-2.5 w-full cursor-pointer rounded-lg bg-slate-500 md:w-1/3 md:self-center p-2.5 text-base text-white transition-opacity active:opacity-80" onclick="addPoints('visitor', -1)">-1 GOL (Corregir)</button>
                 `;
+            }
+
+            if(currentSportName.toLowerCase().includes('fútbol sala')) {
+                localDiv.innerHTML = futsalHtml('local', match_state, 'GOL', 'bg-green-600');
+                visitorDiv.innerHTML = futsalHtml('visitor', match_state, 'GOL', 'bg-blue-600');
             }
 
             // Seleccionar en el dropdown el deporte actual si nos acabamos de conectar

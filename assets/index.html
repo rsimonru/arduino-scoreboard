@@ -32,6 +32,13 @@ SPDX-License-Identifier: MPL-2.0
         </div>
     </div>
 
+    <div id="localFoulsBox" hidden class="fixed bottom-6 left-10 text-left text-[4rem] leading-[normal] font-bold text-[#4CAF50]">
+        <span class="text-[#aaa]">F:</span> <span id="localFouls">0</span>
+    </div>
+    <div id="visitorFoulsBox" hidden class="fixed right-10 bottom-6 text-right text-[4rem] leading-[normal] font-bold text-[#2196F3]">
+        <span class="text-[#aaa]">F:</span> <span id="visitorFouls">0</span>
+    </div>
+
     <script>
         const socket = io();
 
@@ -56,6 +63,11 @@ SPDX-License-Identifier: MPL-2.0
           // NUEVO: Actualizamos los nombres de los equipos
           document.getElementById('localNameDisp').innerText = match_state.localName;
           document.getElementById('visitorNameDisp').innerText = match_state.visitorName;
+          const showFouls = match_state.sport_name.toLowerCase().includes('fútbol sala');
+          document.getElementById('localFoulsBox').hidden = !showFouls;
+          document.getElementById('visitorFoulsBox').hidden = !showFouls;
+          document.getElementById('localFouls').innerText = match_state.localFouls || 0;
+          document.getElementById('visitorFouls').innerText = match_state.visitorFouls || 0;
           setLogo('localLogoImg', match_state.localLogo);
           setLogo('visitorLogoImg', match_state.visitorLogo);
         });

@@ -4,6 +4,7 @@
   "description": "The **Button Action** example demonstrates how to receive and handle button clicks from the Web UI using both WebSocket and HTTP POST requests.",
   "main": "index.js",
   "scripts": {
+    "build:css": "tailwindcss -i ./assets/input.css -o ./assets/tailwind.css",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

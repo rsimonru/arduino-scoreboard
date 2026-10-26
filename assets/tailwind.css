@@ -194,8 +194,23 @@
   }
 }
 @layer utilities {
+  .visible {
+    visibility: visible;
+  }
+  .fixed {
+    position: fixed;
+  }
   .relative {
     position: relative;
+  }
+  .right-10 {
+    right: calc(var(--spacing) * 10);
+  }
+  .bottom-6 {
+    bottom: calc(var(--spacing) * 6);
+  }
+  .left-10 {
+    left: calc(var(--spacing) * 10);
   }
   .m-0 {
     margin: 0px;
@@ -245,6 +260,12 @@
   .max-h-full {
     max-height: 100%;
   }
+  .w-1\/3 {
+    width: calc(1 / 3 * 100%);
+  }
+  .w-2\/3 {
+    width: calc(2 / 3 * 100%);
+  }
   .w-20 {
     width: calc(var(--spacing) * 20);
   }
@@ -271,6 +292,9 @@
   }
   .cursor-pointer {
     cursor: pointer;
+  }
+  .touch-manipulation {
+    touch-action: manipulation;
   }
   .flex-col {
     flex-direction: column;
@@ -360,6 +384,9 @@
   .p-5 {
     padding: calc(var(--spacing) * 5);
   }
+  .px-2\.5 {
+    padding-inline: calc(var(--spacing) * 2.5);
+  }
   .px-4 {
     padding-inline: calc(var(--spacing) * 4);
   }
@@ -380,6 +407,12 @@
   }
   .text-center {
     text-align: center;
+  }
+  .text-left {
+    text-align: left;
+  }
+  .text-right {
+    text-align: right;
   }
   .font-\[Arial\,sans-serif\] {
     font-family: Arial,sans-serif;

@@ -39,6 +39,7 @@ SPDX-License-Identifier: MPL-2.0
         <span class="text-[#aaa]">F:</span> <span id="visitorFouls">0</span>
     </div>
 
+    <video id="promoVideo" hidden playsinline class="fixed inset-0 z-50 h-screen w-screen bg-black object-contain"></video>
     <script>
         const socket = io();
 
@@ -70,7 +71,50 @@ SPDX-License-Identifier: MPL-2.0
           document.getElementById('visitorFouls').innerText = match_state.visitorFouls || 0;
           setLogo('localLogoImg', match_state.localLogo);
           setLogo('visitorLogoImg', match_state.visitorLogo);
+          setPromo(match_state);
         });
+
+        const promo = document.getElementById('promoVideo');
+        let promoShown = false;
+        let promoRestartId = null;
+
+        function seekPromo(position) {
+          const apply = () => { try { promo.currentTime = position; } catch (e) {} };
+          if (promo.readyState >= 1) apply();
+          else promo.addEventListener('loadedmetadata', apply, { once: true });
+        }
+
+        function setPromo(state) {
+          const url = state.promoUrl;
+          const show = !!(url && state.promoPlaying);
+          const restarted = promoRestartId !== null && state.promoRestartId !== promoRestartId;
+          promoRestartId = state.promoRestartId;
+          if (show === promoShown) {
+            if (show && restarted) { promo.currentTime = 0; promo.play().catch(() => {}); }
+            return;
+          }
+          promoShown = show;
+          if (show) {
+            if (!promo.src.endsWith(url)) promo.src = url;
+            seekPromo(state.promoPosition || 0);
+            promo.muted = false;
+            promo.hidden = false;
+            // Si el navegador bloquea el audio sin interacción previa, reproducimos sin sonido
+            promo.play().catch(() => { promo.muted = true; promo.play().catch(() => {}); });
+          } else {
+            promo.pause();
+            if (url) socket.emit('setPromoPosition', { position: promo.ended ? 0 : promo.currentTime });
+            promo.hidden = true;
+            if (!url) { promo.removeAttribute('src'); promo.load(); }
+          }
+        }
+
+        promo.addEventListener('ended', () => {
+          promo.currentTime = 0;
+          socket.emit('setPromoPosition', { position: 0 });
+          socket.emit('setPromoPlaying', { playing: false });
+        });
+        promo.addEventListener('error', () => { if (promoShown) socket.emit('setPromoPlaying', { playing: false }); });
 
         function setLogo(id, url) {
           const img = document.getElementById(id);

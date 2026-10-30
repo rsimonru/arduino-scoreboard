@@ -13,6 +13,7 @@ import time
 import threading
 import sqlite3
 import os
+from typing import Optional
 from fastapi import File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -26,6 +27,24 @@ def init_db():
     c.execute("CREATE TABLE IF NOT EXISTS configs (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, timer_mode TEXT, default_minutes INTEGER)")
     c.execute("CREATE TABLE IF NOT EXISTS team_names (team TEXT PRIMARY KEY, name TEXT NOT NULL)")
     c.execute("CREATE TABLE IF NOT EXISTS team_logos (team TEXT PRIMARY KEY, filename TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+    c.execute("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE, logo TEXT, updated_at INTEGER NOT NULL DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS selected_teams (side TEXT PRIMARY KEY, team_id INTEGER)")
+    c.execute("CREATE TABLE IF NOT EXISTS promo_video (id INTEGER PRIMARY KEY CHECK (id = 1), filename TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+
+    # Migración única de los nombres/escudos antiguos (local/visitante) a la tabla de equipos
+    c.execute("SELECT COUNT(*) FROM teams")
+    if c.fetchone()[0] == 0:
+        names = dict(c.execute("SELECT team, name FROM team_names").fetchall())
+        logos = {t: (f, u) for t, f, u in c.execute("SELECT team, filename, updated_at FROM team_logos").fetchall()}
+        for side in ('local', 'visitor'):
+            name = names.get(side)
+            if not name or name in ('LOCAL', 'VISITANTE'):
+                continue
+            logo, updated = logos.get(side, (None, 0))
+            c.execute("INSERT OR IGNORE INTO teams (name, logo, updated_at) VALUES (?, ?, ?)", (name, logo, updated))
+            row = c.execute("SELECT id FROM teams WHERE name = ?", (name,)).fetchone()
+            c.execute("INSERT OR REPLACE INTO selected_teams (side, team_id) VALUES (?, ?)", (side, row[0]))
+    conn.commit()
     
     # Si la base de datos está vacía, insertamos la configuración por defecto
     c.execute("SELECT COUNT(*) FROM configs")
@@ -47,81 +66,216 @@ def get_configs():
     conn.close()
     return [{"id": r[0], "name": r[1], "timer_mode": r[2], "default_minutes": r[3]} for r in rows]
 
-# ----------------- ESCUDOS DE LOS EQUIPOS -----------------
+# ----------------- EQUIPOS Y ESCUDOS -----------------
 LOGOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'logos')
-LOGO_TEAMS = ('local', 'visitor')
 LOGO_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg')
 LOGO_MAX_BYTES = 5 * 1024 * 1024
+SIDES = ('local', 'visitor')
+DEFAULT_NAMES = {'local': 'LOCAL', 'visitor': 'VISITANTE'}
 
-def get_logo_urls():
+def logo_url(logo, updated_at):
+    if logo and os.path.exists(os.path.join(LOGOS_DIR, logo)):
+        return f"/logos/{logo}?v={updated_at}"
+    return ''
+
+def get_teams():
     conn = sqlite3.connect('sports_config.db')
-    rows = conn.execute("SELECT team, filename, updated_at FROM team_logos").fetchall()
+    rows = conn.execute("SELECT id, name, logo, updated_at FROM teams ORDER BY name COLLATE NOCASE").fetchall()
     conn.close()
-    urls = {'local': '', 'visitor': ''}
-    for team, filename, updated_at in rows:
-        if team in urls and os.path.exists(os.path.join(LOGOS_DIR, filename)):
-            urls[team] = f"/logos/{filename}?v={updated_at}"
-    return urls
+    return [{'id': r[0], 'name': r[1], 'logo': logo_url(r[2], r[3])} for r in rows]
 
-def remove_logo_files(team):
-    if os.path.isdir(LOGOS_DIR):
-        for f in os.listdir(LOGOS_DIR):
-            if os.path.splitext(f)[0] == team:
-                os.remove(os.path.join(LOGOS_DIR, f))
+def get_selected_teams():
+    conn = sqlite3.connect('sports_config.db')
+    rows = conn.execute("SELECT side, team_id FROM selected_teams").fetchall()
+    conn.close()
+    return {side: team_id for side, team_id in rows}
 
-def refresh_logos():
-    urls = get_logo_urls()
-    match_state['localLogo'] = urls['local']
-    match_state['visitorLogo'] = urls['visitor']
+def apply_selected_teams():
+    teams = {t['id']: t for t in get_teams()}
+    selected = get_selected_teams()
+    for side in SIDES:
+        team = teams.get(selected.get(side))
+        match_state[side + 'TeamId'] = team['id'] if team else None
+        match_state[side + 'Name'] = team['name'] if team else DEFAULT_NAMES[side]
+        match_state[side + 'Logo'] = team['logo'] if team else ''
+
+def broadcast_teams():
+    apply_selected_teams()
+    ui.send_message('teamsList', get_teams())
     ui.send_message('updateScoreboard', match_state)
 
-async def upload_logo(team: str = Form(...), file: UploadFile = File(...)):
-    if team not in LOGO_TEAMS:
-        return JSONResponse({'error': 'Equipo no válido'}, status_code=400)
+def remove_logo_file(filename):
+    if not filename:
+        return
+    conn = sqlite3.connect('sports_config.db')
+    in_use = conn.execute("SELECT COUNT(*) FROM teams WHERE logo = ?", (filename,)).fetchone()[0]
+    conn.close()
+    path = os.path.join(LOGOS_DIR, filename)
+    if not in_use and os.path.isfile(path):
+        os.remove(path)
+
+async def save_team(id: Optional[int] = Form(None), name: str = Form(...),
+                    remove_logo: bool = Form(False), file: Optional[UploadFile] = File(None)):
+    name = name.strip()
+    if not name:
+        return JSONResponse({'error': 'El nombre del equipo es obligatorio'}, status_code=400)
+
+    content, ext = None, ''
+    if file is not None and file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in LOGO_EXTENSIONS:
+            return JSONResponse({'error': 'Formato de imagen no permitido'}, status_code=400)
+        content = await file.read(LOGO_MAX_BYTES + 1)
+        if len(content) > LOGO_MAX_BYTES:
+            return JSONResponse({'error': 'La imagen supera los 5 MB'}, status_code=413)
+
+    conn = sqlite3.connect('sports_config.db')
+    old_logo = None
+    new_logo = None
+    try:
+        if id is None:
+            cur = conn.execute("INSERT INTO teams (name, logo, updated_at) VALUES (?, NULL, ?)", (name, int(time.time())))
+            id = cur.lastrowid
+        else:
+            row = conn.execute("SELECT logo FROM teams WHERE id = ?", (id,)).fetchone()
+            if row is None:
+                return JSONResponse({'error': 'Equipo no encontrado'}, status_code=404)
+            old_logo = row[0]
+            conn.execute("UPDATE teams SET name = ?, updated_at = ? WHERE id = ?", (name, int(time.time()), id))
+
+        new_logo = old_logo
+        if content is not None:
+            os.makedirs(LOGOS_DIR, exist_ok=True)
+            new_logo = f"team_{id}_{int(time.time())}{ext}"
+            with open(os.path.join(LOGOS_DIR, new_logo), 'wb') as f:
+                f.write(content)
+        elif remove_logo:
+            new_logo = None
+        conn.execute("UPDATE teams SET logo = ? WHERE id = ?", (new_logo, id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return JSONResponse({'error': 'Ya existe un equipo con ese nombre'}, status_code=409)
+    finally:
+        conn.close()
+
+    if old_logo and old_logo != new_logo:
+        remove_logo_file(old_logo)
+    broadcast_teams()
+    return {'ok': True, 'id': id}
+
+def delete_team(id: int):
+    conn = sqlite3.connect('sports_config.db')
+    row = conn.execute("SELECT logo FROM teams WHERE id = ?", (id,)).fetchone()
+    conn.execute("DELETE FROM teams WHERE id = ?", (id,))
+    conn.execute("DELETE FROM selected_teams WHERE team_id = ?", (id,))
+    conn.commit()
+    conn.close()
+    if row:
+        remove_logo_file(row[0])
+    broadcast_teams()
+    return {'ok': True}
+
+def select_team(client, data):
+    side = str(data.get('side'))
+    if side not in SIDES:
+        return
+    team_id = data.get('id')
+    conn = sqlite3.connect('sports_config.db')
+    if team_id in (None, ''):
+        conn.execute("DELETE FROM selected_teams WHERE side = ?", (side,))
+    else:
+        conn.execute("INSERT OR REPLACE INTO selected_teams (side, team_id) VALUES (?, ?)", (side, int(team_id)))
+    conn.commit()
+    conn.close()
+    broadcast_teams()
+
+# ----------------- VÍDEO PROMOCIONAL -----------------
+VIDEO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'video')
+VIDEO_EXTENSIONS = ('.mp4', '.webm', '.ogg', '.mov', '.m4v')
+VIDEO_MAX_BYTES = 500 * 1024 * 1024
+
+def get_promo_url():
+    conn = sqlite3.connect('sports_config.db')
+    row = conn.execute("SELECT filename, updated_at FROM promo_video WHERE id = 1").fetchone()
+    conn.close()
+    if row and os.path.exists(os.path.join(VIDEO_DIR, row[0])):
+        return f"/video/{row[0]}?v={row[1]}"
+    return ''
+
+def remove_video_files(keep=None):
+    if os.path.isdir(VIDEO_DIR):
+        for f in os.listdir(VIDEO_DIR):
+            if f != keep:
+                os.remove(os.path.join(VIDEO_DIR, f))
+
+def refresh_promo():
+    match_state['promoUrl'] = get_promo_url()
+    match_state['promoPosition'] = 0
+    if not match_state['promoUrl']:
+        match_state['promoPlaying'] = False
+    ui.send_message('updateScoreboard', match_state)
+
+async def upload_promo(file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename or '')[1].lower()
-    if ext not in LOGO_EXTENSIONS:
-        return JSONResponse({'error': 'Formato de imagen no permitido'}, status_code=400)
-    content = await file.read(LOGO_MAX_BYTES + 1)
-    if len(content) > LOGO_MAX_BYTES:
-        return JSONResponse({'error': 'La imagen supera los 5 MB'}, status_code=413)
+    if ext not in VIDEO_EXTENSIONS:
+        return JSONResponse({'error': 'Formato de vídeo no permitido (mp4, webm, ogg, mov, m4v)'}, status_code=400)
 
-    os.makedirs(LOGOS_DIR, exist_ok=True)
-    remove_logo_files(team)
-    filename = team + ext
-    with open(os.path.join(LOGOS_DIR, filename), 'wb') as f:
-        f.write(content)
+    os.makedirs(VIDEO_DIR, exist_ok=True)
+    stamp = int(time.time())
+    filename = f"promo_{stamp}{ext}"
+    path = os.path.join(VIDEO_DIR, filename)
+    size = 0
+    with open(path, 'wb') as f:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > VIDEO_MAX_BYTES:
+                f.close()
+                os.remove(path)
+                return JSONResponse({'error': 'El vídeo supera los 500 MB'}, status_code=413)
+            f.write(chunk)
 
     conn = sqlite3.connect('sports_config.db')
-    conn.execute("INSERT OR REPLACE INTO team_logos (team, filename, updated_at) VALUES (?, ?, ?)",
-                 (team, filename, int(time.time())))
+    conn.execute("INSERT OR REPLACE INTO promo_video (id, filename, updated_at) VALUES (1, ?, ?)", (filename, stamp))
     conn.commit()
     conn.close()
-    refresh_logos()
+    remove_video_files(keep=filename)
+    match_state['promoPlaying'] = False
+    refresh_promo()
     return {'ok': True}
 
-def delete_logo(team: str):
-    if team not in LOGO_TEAMS:
-        return JSONResponse({'error': 'Equipo no válido'}, status_code=400)
-    remove_logo_files(team)
+def delete_promo():
     conn = sqlite3.connect('sports_config.db')
-    conn.execute("DELETE FROM team_logos WHERE team = ?", (team,))
+    conn.execute("DELETE FROM promo_video")
     conn.commit()
     conn.close()
-    refresh_logos()
+    remove_video_files()
+    refresh_promo()
     return {'ok': True}
 
-def get_team_names():
-    conn = sqlite3.connect('sports_config.db')
-    names = dict(conn.execute("SELECT team, name FROM team_names").fetchall())
-    conn.close()
-    return names
+def set_promo_playing(client, data):
+    playing = bool((data or {}).get('playing'))
+    match_state['promoPlaying'] = playing and bool(match_state['promoUrl'])
+    ui.send_message('updateScoreboard', match_state)
 
-def save_team_names(local_name, visitor_name):
-    conn = sqlite3.connect('sports_config.db')
-    conn.executemany("INSERT OR REPLACE INTO team_names (team, name) VALUES (?, ?)",
-                     [('local', local_name), ('visitor', visitor_name)])
-    conn.commit()
-    conn.close()
+def set_promo_position(client, data):
+    # La posición la reporta la pantalla del marcador al parar el vídeo
+    try:
+        position = max(0.0, float((data or {}).get('position', 0)))
+    except (TypeError, ValueError):
+        return
+    match_state['promoPosition'] = position
+
+def restart_promo(client, data):
+    if not match_state['promoUrl']:
+        return
+    match_state['promoPosition'] = 0
+    match_state['promoRestartId'] += 1
+    match_state['promoPlaying'] = True
+    ui.send_message('updateScoreboard', match_state)
 
 # Inicializamos la base de datos al arrancar
 init_db()
@@ -135,6 +289,12 @@ match_state = {
     'visitorName': 'VISITANTE',  # NUEVO
     'localLogo': '',
     'visitorLogo': '',
+    'localTeamId': None,
+    'visitorTeamId': None,
+    'promoUrl': '',
+    'promoPlaying': False,
+    'promoPosition': 0,
+    'promoRestartId': 0,
     'localPoints': 0,
     'visitorPoints': 0,
     'localFouls': 0,
@@ -160,11 +320,8 @@ def cronometro():
             ui.send_message('updateTime', {"seconds": match_state['seconds']})
         time.sleep(1)
 
-saved_names = get_team_names()
-match_state['localName'] = saved_names.get('local', match_state['localName'])
-match_state['visitorName'] = saved_names.get('visitor', match_state['visitorName'])
-match_state['localLogo'] = get_logo_urls()['local']
-match_state['visitorLogo'] = get_logo_urls()['visitor']
+apply_selected_teams()
+match_state['promoUrl'] = get_promo_url()
 
 # ----------------- EVENTOS WEBSOCKET -----------------
 def on_connect(client, data):
@@ -172,6 +329,7 @@ def on_connect(client, data):
     ui.send_message('updateScoreboard', match_state)
     ui.send_message('updateTime', {"seconds": match_state['seconds']})
     ui.send_message('configsList', get_configs()) # Enviamos las configs a la tablet
+    ui.send_message('teamsList', get_teams())
     
 def load_config(client, data):
     config_id = int(data['id'])
@@ -248,13 +406,7 @@ def setTime(client, data):
     # Enviamos el tiempo actualizado inmediatamente a todas las pantallas
     ui.send_message('updateTime', {"seconds": match_state['seconds']})
     
-def setTeamNames(client, data):
-    # Si dejan el campo en blanco, volvemos a poner 'LOCAL' o 'VISITANTE' por defecto
-    match_state['localName'] = data['localName'] if data['localName'] else 'LOCAL'
-    match_state['visitorName'] = data['visitorName'] if data['visitorName'] else 'VISITANTE'
-    save_team_names(match_state['localName'], match_state['visitorName'])
-    
-    ui.send_message('updateScoreboard', match_state)
+
 
 
 # Register the function to be called when the events are received from the Web UI via websocket.
@@ -267,10 +419,15 @@ ui.on_message("timeToggle", timeToggle)
 ui.on_message("buzzer", buzzer)
 ui.on_message("totalReset", totalReset)
 ui.on_message("setTime", setTime)
-ui.on_message("setTeamNames", setTeamNames)
+ui.on_message("selectTeam", select_team)
+ui.on_message("setPromoPlaying", set_promo_playing)
+ui.on_message("setPromoPosition", set_promo_position)
+ui.on_message("restartPromo", restart_promo)
 
-ui.expose_api("POST", "/upload_logo", upload_logo)
-ui.expose_api("POST", "/delete_logo", delete_logo)
+ui.expose_api("POST", "/save_team", save_team)
+ui.expose_api("POST", "/delete_team", delete_team)
+ui.expose_api("POST", "/upload_promo", upload_promo)
+ui.expose_api("POST", "/delete_promo", delete_promo)
 
 # Expose the http_print_message function as an HTTP RESTful API endpoint that can be called from the Web UI using a POST request
 # ui.expose_api(method="POST", path="/print_message", function=http_print_message)

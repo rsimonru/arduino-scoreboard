@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./assets/input.css -o ./assets/tailwind.css",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "copy:libs": "cp node_modules/lucide/dist/umd/lucide.min.js assets/libs/lucide.min.js && cp node_modules/sweetalert2/dist/sweetalert2.all.min.js assets/libs/sweetalert2.all.min.js"
   },
   "keywords": [],
   "author": "",
@@ -14,5 +15,9 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
     "tailwindcss": "^4.3.3"
+  },
+  "dependencies": {
+    "lucide": "^1.65.0",
+    "sweetalert2": "^11.26.25"
   }
 }

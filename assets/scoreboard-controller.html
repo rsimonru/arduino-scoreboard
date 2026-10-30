@@ -6,11 +6,29 @@
     <title>Control Marcador</title>
     <script src="/libs/socket.io.min.js"></script>
     <script src="/libs/NoSleep.min.js"></script>
+    <script src="/libs/lucide.min.js"></script>
+    <script src="/libs/sweetalert2.all.min.js"></script>
     <link rel="stylesheet" href="tailwind.css">
 </head>
 <body class="touch-manipulation bg-slate-100 p-5 font-sans text-center text-slate-900">
     <main class="mx-auto max-w-4xl">
-      <button id="btnToggleSettings" type="button" aria-expanded="false" aria-controls="settingsPanel" class="mb-5 cursor-pointer rounded-lg bg-slate-700 px-5 py-3 text-xl text-white transition-opacity active:opacity-80">⚙ Mostrar configuración</button>
+      <style>
+        #noSleepToggle { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; vertical-align: middle; cursor: pointer; font-size: 1.1rem; }
+        #noSleepToggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+        #noSleepToggle .track { position: relative; width: 52px; height: 28px; border-radius: 14px; background: #94a3b8; transition: background .2s; }
+        #noSleepToggle .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+        #noSleepToggle input:checked + .track { background: #16a34a; }
+        #noSleepToggle input:checked + .track::after { transform: translateX(24px); }
+        #noSleepToggle input:focus-visible + .track { outline: 2px solid #3b82f6; outline-offset: 2px; }
+      </style>
+      <div class="mb-5">
+        <button id="btnToggleSettings" type="button" aria-expanded="false" aria-controls="settingsPanel" class="cursor-pointer rounded-lg bg-slate-700 px-5 py-3 text-xl text-white transition-opacity active:opacity-80"><i data-lucide="settings" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i> Conf.</button>
+        <label id="noSleepToggle" title="Mantener la pantalla encendida">
+          <input id="noSleepSwitch" type="checkbox" role="switch">
+          <span class="track"></span>
+          <span>Pantalla activa</span>
+        </label>
+      </div>
       <div id="settingsPanel" class="hidden">
         <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
             <h2 class="mb-4 text-2xl font-bold">Configuración Deportiva</h2>
@@ -19,29 +37,58 @@
             </select>
         </div>
         <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
-            <h2 class="mb-4 text-2xl font-bold">Nombres de los Equipos</h2>
-            <div class="mb-4 flex flex-col items-center justify-center gap-2.5 md:flex-row">
-                <input type="text" id="inputLocalName" placeholder="Local" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
+            <h2 class="mb-4 text-2xl font-bold">Equipos</h2>
+            <div class="mb-4 flex flex-col items-stretch justify-center gap-2.5 md:flex-row md:items-center">
+                <div class="flex w-full min-w-0 items-center gap-2 md:flex-1">
+                    <img id="previewLocalLogo" alt="" class="hidden h-14 w-14 shrink-0 object-contain">
+                    <div class="relative w-full min-w-0">
+                        <input type="text" id="comboLocalInput" autocomplete="off" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" onfocus="comboOpen('local')" oninput="comboRender('local')" onblur="comboClose('local')">
+                        <ul id="comboLocalList" class="absolute left-0 right-0 z-20 mt-1 hidden max-h-60 overflow-y-auto rounded-xl border border-slate-300 bg-white text-left shadow-lg" onpointerdown="event.preventDefault()"></ul>
+                    </div>
+                </div>
                 <span class="text-2xl">VS</span>
-                <input type="text" id="inputVisitorName" placeholder="Visitante" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 md:flex-1">
-            </div>
-            <div class="mb-4 flex flex-col gap-4 md:flex-row">
-                <div class="flex w-full min-w-0 flex-col items-center gap-2 rounded-xl border border-slate-300 p-3 md:flex-1">
-                    <span class="text-lg font-bold">Escudo local</span>
-                    <img id="previewLocalLogo" alt="Escudo local" class="hidden h-20 w-20 object-contain">
-                    <input type="file" id="fileLocalLogo" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base" onchange="uploadLogo('local', this)">
-                    <button id="btnDeleteLocalLogo" type="button" class="hidden cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-base text-white transition-opacity active:opacity-80" onclick="deleteLogo('local')">Eliminar escudo</button>
-                </div>
-                <div class="flex w-full min-w-0 flex-col items-center gap-2 rounded-xl border border-slate-300 p-3 md:flex-1">
-                    <span class="text-lg font-bold">Escudo visitante</span>
-                    <img id="previewVisitorLogo" alt="Escudo visitante" class="hidden h-20 w-20 object-contain">
-                    <input type="file" id="fileVisitorLogo" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base" onchange="uploadLogo('visitor', this)">
-                    <button id="btnDeleteVisitorLogo" type="button" class="hidden cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-base text-white transition-opacity active:opacity-80" onclick="deleteLogo('visitor')">Eliminar escudo</button>
+                <div class="flex w-full min-w-0 items-center gap-2 md:flex-1">
+                    <img id="previewVisitorLogo" alt="" class="hidden h-14 w-14 shrink-0 object-contain">
+                    <div class="relative w-full min-w-0">
+                        <input type="text" id="comboVisitorInput" autocomplete="off" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" onfocus="comboOpen('visitor')" oninput="comboRender('visitor')" onblur="comboClose('visitor')">
+                        <ul id="comboVisitorList" class="absolute left-0 right-0 z-20 mt-1 hidden max-h-60 overflow-y-auto rounded-xl border border-slate-300 bg-white text-left shadow-lg" onpointerdown="event.preventDefault()"></ul>
+                    </div>
                 </div>
             </div>
-            <button onclick="applyTeamNames()" class="cursor-pointer rounded-lg bg-green-600 p-2.5 text-2xl text-white transition-opacity active:opacity-80">Actualizar Nombres</button>
+
+            <h3 class="mb-2 text-xl font-bold" id="teamFormTitle">Añadir equipo</h3>
+            <div class="mb-4 flex flex-col gap-2.5 rounded-xl border border-slate-300 p-3">
+                <input type="text" id="teamName" placeholder="Nombre del equipo" class="w-full min-w-0 rounded-xl border border-slate-300 p-2.5 text-2xl focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                <div class="flex items-center gap-2">
+                    <img id="teamFormLogo" alt="" class="hidden h-14 w-14 shrink-0 object-contain">
+                    <input type="file" id="teamFile" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base">
+                </div>
+                <label id="teamRemoveLogoRow" class="hidden items-center justify-center gap-2 text-base"><input type="checkbox" id="teamRemoveLogo"> Quitar escudo</label>
+                <div class="flex justify-center gap-2.5">
+                    <button type="button" onclick="saveTeam()" class="cursor-pointer rounded-lg bg-green-600 px-4 py-2 text-xl text-white transition-opacity active:opacity-80" id="btnSaveTeam">Guardar equipo</button>
+                    <button type="button" id="btnCancelTeam" onclick="resetTeamForm()" class="hidden cursor-pointer rounded-lg bg-slate-500 px-4 py-2 text-xl text-white transition-opacity active:opacity-80">Cancelar</button>
+                </div>
+            </div>
+
+            <div class="mb-2 flex items-center gap-3">
+                <h3 class="shrink-0 text-xl font-bold mr-2">Equipos</h3>
+                <input type="search" id="teamSearch" placeholder="Buscar equipo..." autocomplete="off" class="w-full min-w-0 rounded-xl border border-slate-300 p-2 text-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" oninput="renderTeamsList()">
+            </div>
+            <ul id="teamsList" class="flex flex-col gap-2 overflow-y-auto" style="max-height: 256px"></ul>
         </div>
     
+        <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
+            <h2 class="mb-4 text-2xl font-bold">Vídeo promocional</h2>
+            <p id="promoStatus" class="mb-3 text-lg text-slate-600">Sin vídeo</p>
+            <input type="file" id="promoFile" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.ogg,.mov,.m4v" class="mb-3 w-full min-w-0 rounded-xl border border-slate-300 p-2 text-base">
+            <div class="flex justify-center gap-2.5">
+                <button type="button" id="btnUploadPromo" onclick="uploadPromo()" class="cursor-pointer rounded-lg bg-green-600 px-4 py-2 text-xl text-white transition-opacity active:opacity-80" aria-label="Subir vídeo" title="Subir vídeo"><i data-lucide="upload" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i></button>
+                <button type="button" id="btnDeletePromo" onclick="deletePromo()" class="hidden cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-xl text-white transition-opacity active:opacity-80" aria-label="Eliminar vídeo" title="Eliminar vídeo"><i data-lucide="trash-2" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i></button>
+                <button id="btnPromo" type="button" class="hidden cursor-pointer rounded-lg bg-purple-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="togglePromo()"><i data-lucide="play" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i></button>
+                <button id="btnPromoRestart" type="button" class="hidden cursor-pointer rounded-lg bg-slate-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="restartPromo()" aria-label="Reiniciar vídeo" title="Reiniciar vídeo desde el principio"><i data-lucide="rotate-ccw" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i></button>
+            </div>
+        </div>
+
         <div class="mb-5 rounded-xl bg-white p-5 shadow-md">
             <h2 class="text-2xl font-bold">Ajuste manual de tiempo</h2>
             <div class="flex justify-center gap-2.5">
@@ -57,9 +104,9 @@
           <h2 class="text-2xl font-bold">Reloj del Partido</h2>
           <div id="tableWatch" class="my-2 font-mono text-6xl font-bold">00:00</div>
           <div class="flex justify-center gap-2.5">
-              <button id="btnToggleTime" class="cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('timeToggle', null)">▶ Iniciar Reloj</button>
-              <button class="max-w-2xl cursor-pointer rounded-lg bg-amber-500 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('buzzer', { duration: 2000 })">🔔 Sonar</button>
-      
+              <button id="btnToggleTime" class="cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('timeToggle', null)"><i data-lucide="play" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i> Reloj</button>
+              <button class="max-w-2xl cursor-pointer rounded-lg bg-amber-500 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80" onclick="socket.emit('buzzer', { duration: 2000 })"><i data-lucide="bell" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i> Sonar</button>
+              
           </div>
       </div>
   
@@ -81,11 +128,32 @@
     <script>
         const socket = io();
 
+        const swalBase = { buttonsStyling: false, customClass: {
+            popup: 'rounded-xl', confirmButton: 'mx-1 cursor-pointer rounded-lg bg-green-600 px-5 py-2 text-xl text-white active:opacity-80',
+            cancelButton: 'mx-1 cursor-pointer rounded-lg bg-slate-500 px-5 py-2 text-xl text-white active:opacity-80' } };
+
+        function showAlert(text, icon = 'warning') {
+            return Swal.fire({ ...swalBase, text, icon, confirmButtonText: 'Aceptar' });
+        }
+
+        async function showConfirm(text, confirmText = 'Aceptar') {
+            const res = await Swal.fire({ ...swalBase, text, icon: 'question', showCancelButton: true,
+                confirmButtonText: confirmText, cancelButtonText: 'Cancelar', reverseButtons: true });
+            return res.isConfirmed;
+        }
+
+        // Sustituye el contenido del botón por un icono Lucide seguido de texto
+        function setIconText(el, icon, text) {
+            el.innerHTML = `<i data-lucide="${icon}" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i> ${text}`;
+            lucide.createIcons();
+        }
+        document.addEventListener('DOMContentLoaded', () => lucide.createIcons());
+
         document.getElementById('btnToggleSettings').addEventListener('click', (e) => {
             const panel = document.getElementById('settingsPanel');
             const hidden = panel.classList.toggle('hidden');
             e.currentTarget.setAttribute('aria-expanded', String(!hidden));
-            e.currentTarget.textContent = hidden ? '⚙ Mostrar configuración' : '✕ Ocultar configuración';
+            setIconText(e.currentTarget, hidden ? 'settings' : 'x', 'Conf.');
         });
         let currentSportName = "";
 
@@ -131,9 +199,9 @@
         }
 
         // Notificar al backend que queremos cambiar de deporte
-        function changeSport() {
+        async function changeSport() {
             const selector = document.getElementById('configSelector');
-            if(confirm("¿Cambiar de deporte? Esto reiniciará el marcador y el tiempo actual.")) {
+            if (await showConfirm("¿Cambiar de deporte? Esto reiniciará el marcador y el tiempo actual.")) {
                 socket.emit('loadConfig', { id: selector.value });
             }
         }
@@ -165,21 +233,19 @@
             document.getElementById('lblLocalName').innerText = scoreText(match_state.localName, match_state.localPoints, match_state.localFouls);
             document.getElementById('lblVisitorName').innerText = scoreText(match_state.visitorName, match_state.visitorPoints, match_state.visitorFouls);
             
-            document.getElementById('inputLocalName').value = match_state.localName === 'LOCAL' ? '' : match_state.localName;
-            document.getElementById('inputVisitorName').value = match_state.visitorName === 'VISITANTE' ? '' : match_state.visitorName;
-
-            showLogo('Local', match_state.localLogo);
-            showLogo('Visitor', match_state.visitorLogo);
+            lastState = match_state;
+            updatePromoUi(match_state);
+            syncTeamSelectors();
           
             const btnToggle = document.getElementById('btnToggleTime');
             if (match_state.is_running) {
                 // Si el reloj está corriendo, el botón se pone naranja y dice Pausar
                 btnToggle.className = 'cursor-pointer rounded-lg bg-amber-500 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80';
-                btnToggle.innerText = '⏸ Pausar Reloj';
+                setIconText(btnToggle, 'pause', ' Reloj');
             } else {
                 // Si está parado, el botón se pone verde y dice Iniciar
                 btnToggle.className = 'cursor-pointer rounded-lg bg-green-600 px-5 py-4 text-2xl text-white transition-opacity active:opacity-80';
-                btnToggle.innerText = '▶ Iniciar Reloj';
+                setIconText(btnToggle, 'play', ' Reloj');
             }
             
             // Adaptar interfaz si es Baloncesto u otro deporte
@@ -237,14 +303,14 @@
             document.getElementById('tableWatch').innerText = formatDisplayTime(seconds);
         });
 
-        function totalReset() {
-            if(confirm("¿Seguro que quieres reiniciar TODO a 0?")) {
+        async function totalReset() {
+            if (await showConfirm("¿Seguro que quieres reiniciar TODO a 0?", "Reiniciar")) {
                 socket.emit('totalReset', null);
             }
         }
       
         // Función para aplicar el tiempo manual
-        function applyManualTime() {
+        async function applyManualTime() {
             // Leer los valores de los inputs (si están vacíos, usamos 0)
             const min = parseInt(document.getElementById('editMin').value) || 0;
             const sec = parseInt(document.getElementById('editSec').value) || 0;
@@ -254,7 +320,7 @@
             
             // Confirmar la acción para evitar errores en directo
             const textTime = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-            if (confirm(`¿Estás seguro de ajustar el reloj a ${textTime}?`)) {
+            if (await showConfirm(`¿Estás seguro de ajustar el reloj a ${textTime}?`)) {
                 socket.emit('setTime', { seconds: totalSeconds });
                 
                 // Vaciar los campos después de aplicarlo
@@ -265,56 +331,270 @@
       
         function showLogo(suffix, url) {
             const img = document.getElementById(`preview${suffix}Logo`);
-            const btn = document.getElementById(`btnDelete${suffix}Logo`);
             if (url) {
                 img.src = url;
             } else {
                 img.removeAttribute('src');
-                document.getElementById(`file${suffix}Logo`).value = '';
             }
             img.classList.toggle('hidden', !url);
-            btn.classList.toggle('hidden', !url);
         }
 
-        async function uploadLogo(team, input) {
-            if (!input.files.length) return;
+        let teams = [];
+        let lastState = null;
+        let editingTeamId = null;
+
+        const comboSelected = { local: null, visitor: null };
+        const comboDefaults = { local: 'LOCAL', visitor: 'VISITANTE' };
+
+        function comboIds(side) {
+            const S = side === 'local' ? 'Local' : 'Visitor';
+            return { input: `combo${S}Input`, list: `combo${S}List` };
+        }
+
+        function comboLabel(side) {
+            const t = teams.find(x => x.id === comboSelected[side]);
+            return t ? t.name : comboDefaults[side];
+        }
+
+        function comboOpen(side) {
+            const input = document.getElementById(comboIds(side).input);
+            input.select();
+            comboRender(side, true);
+        }
+
+        function comboRender(side, showAll) {
+            const ids = comboIds(side);
+            const list = document.getElementById(ids.list);
+            const q = showAll ? '' : document.getElementById(ids.input).value.trim().toLowerCase();
+            list.innerHTML = '';
+            const options = [{ id: null, name: comboDefaults[side] }].concat(teams).filter(t => t.id === null || t.name.toLowerCase().includes(q));
+            options.forEach(t => {
+                const li = document.createElement('li');
+                li.className = 'cursor-pointer px-3 py-2 text-xl active:bg-slate-200' + (t.id === comboSelected[side] ? ' bg-blue-100 font-bold' : '');
+                li.textContent = t.name;
+                li.onclick = () => {
+                    selectTeam(side, t.id === null ? '' : t.id);
+                    comboSelected[side] = t.id;
+                    document.getElementById(ids.input).value = t.name;
+                    document.getElementById(ids.input).blur();
+                };
+                list.appendChild(li);
+            });
+            if (!options.length) {
+                const li = document.createElement('li');
+                li.className = 'px-3 py-2 text-lg text-slate-500';
+                li.textContent = 'Sin resultados';
+                list.appendChild(li);
+            }
+            list.classList.remove('hidden');
+        }
+
+        function comboClose(side) {
+            const ids = comboIds(side);
+            document.getElementById(ids.list).classList.add('hidden');
+            document.getElementById(ids.input).value = comboLabel(side);
+        }
+
+        function syncTeamSelectors() {
+            if (!lastState) return;
+            comboSelected.local = lastState.localTeamId ?? null;
+            comboSelected.visitor = lastState.visitorTeamId ?? null;
+            ['local', 'visitor'].forEach(side => {
+                const input = document.getElementById(comboIds(side).input);
+                if (document.activeElement !== input) input.value = comboLabel(side);
+            });
+            showLogo('Local', lastState.localLogo);
+            showLogo('Visitor', lastState.visitorLogo);
+        }
+
+        socket.on('teamsList', (list) => {
+            teams = list;
+            syncTeamSelectors();
+            renderTeamsList();
+        });
+
+        function renderTeamsList() {
+            const ul = document.getElementById('teamsList');
+            ul.innerHTML = '';
+            const q = document.getElementById('teamSearch').value.trim().toLowerCase();
+            teams.filter(t => t.name.toLowerCase().includes(q)).forEach(t => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center gap-2 rounded-xl border border-slate-300 p-2';
+                const img = document.createElement('img');
+                img.className = 'h-10 w-10 shrink-0 object-contain' + (t.logo ? '' : ' invisible');
+                if (t.logo) img.src = t.logo;
+                const name = document.createElement('span');
+                name.className = 'min-w-0 flex-1 truncate text-left text-l';
+                name.textContent = t.name;
+                const edit = document.createElement('button');
+                edit.type = 'button';
+                edit.className = 'cursor-pointer rounded-lg bg-blue-600 px-3 py-1.5 text-base text-white active:opacity-80';
+                edit.textContent = 'Editar';
+                edit.onclick = () => editTeam(t.id);
+                const del = document.createElement('button');
+                del.type = 'button';
+                del.className = 'cursor-pointer rounded-lg bg-red-600 px-3 py-1.5 text-base text-white active:opacity-80';
+                del.innerHTML = '<i data-lucide="trash-2" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i>';
+                del.setAttribute('aria-label', 'Eliminar equipo');
+                del.title = 'Eliminar equipo';
+                del.onclick = () => deleteTeam(t.id);
+                li.append(img, name, edit, del);
+                ul.appendChild(li);
+            });
+            lucide.createIcons();
+        }
+
+        function selectTeam(side, id) {
+            socket.emit('selectTeam', { side: side, id: id === '' ? null : Number(id) });
+        }
+
+        function editTeam(id) {
+            const t = teams.find(x => x.id === id);
+            if (!t) return;
+            editingTeamId = id;
+            document.getElementById('teamName').value = t.name;
+            document.getElementById('teamFile').value = '';
+            document.getElementById('teamRemoveLogo').checked = false;
+            const img = document.getElementById('teamFormLogo');
+            if (t.logo) img.src = t.logo; else img.removeAttribute('src');
+            img.classList.toggle('hidden', !t.logo);
+            document.getElementById('teamRemoveLogoRow').classList.toggle('hidden', !t.logo);
+            document.getElementById('teamRemoveLogoRow').classList.toggle('flex', !!t.logo);
+            document.getElementById('teamFormTitle').textContent = 'Editar equipo';
+            document.getElementById('btnCancelTeam').classList.remove('hidden');
+            document.getElementById('teamName').focus();
+        }
+
+        function resetTeamForm() {
+            editingTeamId = null;
+            document.getElementById('teamName').value = '';
+            document.getElementById('teamFile').value = '';
+            document.getElementById('teamRemoveLogo').checked = false;
+            document.getElementById('teamFormLogo').classList.add('hidden');
+            document.getElementById('teamRemoveLogoRow').classList.add('hidden');
+            document.getElementById('teamRemoveLogoRow').classList.remove('flex');
+            document.getElementById('teamFormTitle').textContent = 'Añadir equipo';
+            document.getElementById('btnCancelTeam').classList.add('hidden');
+        }
+
+        async function saveTeam() {
+            const name = document.getElementById('teamName').value.trim();
+            if (!name) {
+                showAlert('Introduce el nombre del equipo');
+                return;
+            }
             const body = new FormData();
-            body.append('team', team);
-            body.append('file', input.files[0]);
+            if (editingTeamId !== null) body.append('id', editingTeamId);
+            body.append('name', name);
+            body.append('remove_logo', document.getElementById('teamRemoveLogo').checked ? 'true' : 'false');
+            const file = document.getElementById('teamFile').files[0];
+            if (file) body.append('file', file);
             try {
-                const res = await fetch('/upload_logo', { method: 'POST', body });
+                const res = await fetch('/save_team', { method: 'POST', body });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
-                    alert(err.error || 'No se pudo subir el escudo');
-                    input.value = '';
+                    showAlert(err.error || 'No se pudo guardar el equipo', 'error');
+                    return;
                 }
+                resetTeamForm();
             } catch (e) {
-                alert('No se pudo subir el escudo');
-                input.value = '';
+                showAlert('No se pudo guardar el equipo', 'error');
             }
         }
 
-        async function deleteLogo(team) {
-            await fetch(`/delete_logo?team=${team}`, { method: 'POST' });
+        function updatePromoUi(state) {
+            const has = !!state.promoUrl;
+            const btn = document.getElementById('btnPromo');
+            btn.classList.toggle('hidden', !has);
+            document.getElementById('btnPromoRestart').classList.toggle('hidden', !has);
+            btn.innerHTML = `<i data-lucide="${state.promoPlaying ? 'square' : 'play'}" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i><i data-lucide="film" class="inline-block h-[1.1em] w-[1.1em] align-[-0.15em]"></i>`;
+            lucide.createIcons();
+            btn.classList.toggle('bg-purple-600', !state.promoPlaying);
+            btn.classList.toggle('bg-red-600', !!state.promoPlaying);
+            document.getElementById('promoStatus').textContent = has ? 'Vídeo cargado' : 'Sin vídeo';
+            document.getElementById('btnDeletePromo').classList.toggle('hidden', !has);
         }
 
-        // Función para aplicar nombres de equipos
-        function applyTeamNames() {
-            const local = document.getElementById('inputLocalName').value.trim();
-            const visitor = document.getElementById('inputVisitorName').value.trim();
-            
-            socket.emit('setTeamNames', { 
-                localName: local, 
-                visitorName: visitor 
-            });
+        function restartPromo() {
+            socket.emit('restartPromo', null);
+        }
+
+        function togglePromo() {
+            socket.emit('setPromoPlaying', { playing: !(lastState && lastState.promoPlaying) });
+        }
+
+        function uploadPromo() {
+            const file = document.getElementById('promoFile').files[0];
+            if (!file) {
+                showAlert('Selecciona un vídeo');
+                return;
+            }
+            const btn = document.getElementById('btnUploadPromo');
+            const status = document.getElementById('promoStatus');
+            const body = new FormData();
+            body.append('file', file);
+            btn.disabled = true;
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload_promo');
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) status.textContent = `Subiendo... ${Math.round(e.loaded / e.total * 100)}%`;
+            };
+            xhr.onload = () => {
+                btn.disabled = false;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    document.getElementById('promoFile').value = '';
+                } else {
+                    let msg = 'No se pudo subir el vídeo';
+                    try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+                    showAlert(msg, 'error');
+                }
+                if (lastState) updatePromoUi(lastState);
+            };
+            xhr.onerror = () => {
+                btn.disabled = false;
+                showAlert('No se pudo subir el vídeo', 'error');
+                if (lastState) updatePromoUi(lastState);
+            };
+            xhr.send(body);
+        }
+
+        async function deletePromo() {
+            if (!(await showConfirm('¿Eliminar el vídeo promocional?', 'Eliminar'))) return;
+            await fetch('/delete_promo', { method: 'POST' });
+        }
+
+        async function deleteTeam(id) {
+            const t = teams.find(x => x.id === id);
+            if (!(await showConfirm(`¿Eliminar el equipo "${t ? t.name : ''}"?`, 'Eliminar'))) return;
+            await fetch(`/delete_team?id=${id}`, { method: 'POST' });
+            if (editingTeamId === id) resetTeamForm();
         }
 
         // Pantalla siempre activa
         var noSleep = new NoSleep();
-        document.addEventListener('click', function enableNoSleep() {
-            console.log('Enabling NoSleep');
+        var noSleepSwitch = document.getElementById('noSleepSwitch');
+
+        function setNoSleep(on) {
+            if (on) {
+                noSleep.enable();
+            } else {
+                noSleep.disable();
+            }
+            noSleepSwitch.checked = on;
+        }
+
+        noSleepSwitch.addEventListener('change', function () {
+            setNoSleep(noSleepSwitch.checked);
+        });
+
+        // El navegador exige un gesto del usuario: se activa en el primer clic fuera del switch
+        document.addEventListener('click', function enableNoSleep(e) {
+            if (e.target.closest('#noSleepToggle')) {
+                document.removeEventListener('click', enableNoSleep, false);
+                return;
+            }
             document.removeEventListener('click', enableNoSleep, false);
-            noSleep.enable();
+            setNoSleep(true);
         }, false);
     </script>
 </body>
